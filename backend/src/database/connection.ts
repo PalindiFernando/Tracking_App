@@ -19,7 +19,7 @@ db.on('error', (err) => {
 });
 
 // Test connection (non-blocking)
-db.query('SELECT NOW()', (err: any, res) => {
+db.query('SELECT NOW()', (err: any) => {
   if (err) {
     let errorCode = err.code || err.errno || 'UNKNOWN';
     let errorMessage = err.message;

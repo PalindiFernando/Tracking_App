@@ -2,6 +2,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { db } from './connection';
 import { logger } from '../utils/logger';
+import { createTestUsers } from '../scripts/createTestUsers';
 
 async function migrate(): Promise<void> {
   try {
@@ -52,6 +53,13 @@ async function migrate(): Promise<void> {
     }
 
     logger.info('Database migration completed successfully');
+    
+    // Optionally create test users if CREATE_TEST_USERS env var is set
+    if (process.env.CREATE_TEST_USERS === 'true') {
+      logger.info('Creating test users...');
+      await createTestUsers();
+    }
+    
     process.exit(0);
   } catch (error) {
     logger.error('Database migration failed', error);
