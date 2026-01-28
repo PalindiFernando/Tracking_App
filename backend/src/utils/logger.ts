@@ -1,4 +1,12 @@
 import winston from 'winston';
+import { existsSync, mkdirSync } from 'fs';
+import { dirname } from 'path';
+
+// Ensure logs directory exists
+const logsDir = 'logs';
+if (!existsSync(logsDir)) {
+  mkdirSync(logsDir, { recursive: true });
+}
 
 const logFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
