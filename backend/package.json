@@ -11,6 +11,7 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "migrate": "tsx src/database/migrate.ts",
+    "create-test-users": "tsx src/scripts/createTestUsers.ts",
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {

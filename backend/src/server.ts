@@ -17,6 +17,9 @@ import stopRoutes from './routes/stops';
 import routeRoutes from './routes/routes';
 import etaRoutes from './routes/eta';
 import authRoutes from './routes/auth';
+import driverRoutes from './routes/driver';
+import passengerRoutes from './routes/passenger';
+import adminRoutes from './routes/admin';
 
 dotenv.config();
 
@@ -74,6 +77,9 @@ app.use('/api/stops', stopRoutes);
 app.use('/api/routes', routeRoutes);
 app.use('/api/eta', etaRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/driver', driverRoutes);
+app.use('/api/passenger', passengerRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Error handling
 app.use(errorHandler);
