@@ -20,21 +20,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # Redis Cache
-  redis:
-    image: redis:7-alpine
-    container_name: bus-tracking-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # Backend API
   backend:
     build:
@@ -49,8 +34,6 @@ services:
       DB_USER: ${DB_USER:-bustrack}
       DB_PASSWORD: ${DB_PASSWORD:-bustrack123}
       DB_NAME: ${DB_NAME:-bustracking}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
       JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
       API_KEY_SECRET: ${API_KEY_SECRET:-device-api-key-secret}
@@ -58,8 +41,6 @@ services:
       - "${BACKEND_PORT:-3001}:3001"
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     volumes:
       - ./backend:/app
@@ -85,5 +66,4 @@ services:
 
 volumes:
   postgres_data:
-  redis_data:
 

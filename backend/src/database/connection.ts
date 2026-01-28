@@ -13,14 +13,35 @@ export const db = new Pool({
 });
 
 db.on('error', (err) => {
-  logger.error('Unexpected error on idle client', err);
-  process.exit(-1);
+  logger.error('Unexpected database error on idle client', err);
+  // Don't exit immediately - let the application handle it gracefully
 });
 
-// Test connection
-db.query('SELECT NOW()', (err, res) => {
+// Test connection (non-blocking)
+db.query('SELECT NOW()', (err: any, res) => {
   if (err) {
-    logger.error('Database connection test failed', err);
+    let errorCode = err.code || err.errno || 'UNKNOWN';
+    let errorMessage = err.message;
+    
+    // Handle AggregateError
+    if (err.name === 'AggregateError' && err.errors && err.errors.length > 0) {
+      const firstError = err.errors[0];
+      errorCode = firstError.code || firstError.errno || errorCode;
+      errorMessage = firstError.message || firstError.toString() || errorMessage;
+    }
+    
+    // Fallback if message is still not available
+    if (!errorMessage || errorMessage === 'Connection failed') {
+      if (errorCode === 'ECONNREFUSED') {
+        errorMessage = `Connection refused - PostgreSQL server not available`;
+      } else {
+        errorMessage = err.toString().includes('ECONNREFUSED') 
+          ? 'Connection refused - PostgreSQL server not available'
+          : 'Connection failed';
+      }
+    }
+    
+    logger.warn(`Database connection test failed: ${errorCode} - ${errorMessage}. Will retry on first query.`);
   } else {
     logger.info('Database connection established');
   }

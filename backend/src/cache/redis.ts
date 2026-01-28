@@ -1,63 +1,110 @@
-import { createClient } from 'redis';
-import { logger } from '../utils/logger';
+// In-memory cache implementation (replaces Redis)
+// This provides the same API as the Redis cache but uses in-memory storage
 
-export const redisClient = createClient({
-  url: `redis://${process.env.REDIS_HOST || 'localhost'}:${process.env.REDIS_PORT || '6379'}`
-});
+interface CacheEntry<T> {
+  value: T;
+  expiresAt: number;
+}
 
-redisClient.on('error', (err) => {
-  logger.error('Redis Client Error', err);
-});
+class InMemoryCache {
+  private cache: Map<string, CacheEntry<any>> = new Map();
+  private cleanupInterval: NodeJS.Timeout;
 
-redisClient.on('connect', () => {
-  logger.info('Redis Client Connected');
-});
+  constructor() {
+    // Clean up expired entries every minute
+    this.cleanupInterval = setInterval(() => {
+      this.cleanup();
+    }, 60000);
+  }
 
-redisClient.on('ready', () => {
-  logger.info('Redis Client Ready');
-});
+  private cleanup(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.cache.entries()) {
+      if (entry.expiresAt < now) {
+        this.cache.delete(key);
+      }
+    }
+  }
 
-// Connect to Redis
-redisClient.connect().catch((err) => {
-  logger.error('Failed to connect to Redis', err);
-});
-
-// Cache helper functions
-export const cacheService = {
-  async get<T>(key: string): Promise<T | null> {
-    try {
-      const data = await redisClient.get(key);
-      return data ? JSON.parse(data) : null;
-    } catch (error) {
-      logger.error(`Cache get error for key: ${key}`, error);
+  get<T>(key: string): T | null {
+    const entry = this.cache.get(key);
+    if (!entry) {
       return null;
     }
+
+    // Check if expired
+    if (entry.expiresAt < Date.now()) {
+      this.cache.delete(key);
+      return null;
+    }
+
+    return entry.value as T;
+  }
+
+  set(key: string, value: any, ttlSeconds: number = 30): void {
+    const expiresAt = Date.now() + ttlSeconds * 1000;
+    this.cache.set(key, { value, expiresAt });
+  }
+
+  del(key: string): void {
+    this.cache.delete(key);
+  }
+
+  exists(key: string): boolean {
+    const entry = this.cache.get(key);
+    if (!entry) {
+      return false;
+    }
+
+    // Check if expired
+    if (entry.expiresAt < Date.now()) {
+      this.cache.delete(key);
+      return false;
+    }
+
+    return true;
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  destroy(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+    }
+    this.cache.clear();
+  }
+}
+
+// Create a singleton instance
+const memoryCache = new InMemoryCache();
+
+// Export cache service with the same API as before
+export const cacheService = {
+  async get<T>(key: string): Promise<T | null> {
+    return memoryCache.get<T>(key);
   },
 
   async set(key: string, value: any, ttlSeconds: number = 30): Promise<void> {
-    try {
-      await redisClient.setEx(key, ttlSeconds, JSON.stringify(value));
-    } catch (error) {
-      logger.error(`Cache set error for key: ${key}`, error);
-    }
+    memoryCache.set(key, value, ttlSeconds);
   },
 
   async del(key: string): Promise<void> {
-    try {
-      await redisClient.del(key);
-    } catch (error) {
-      logger.error(`Cache delete error for key: ${key}`, error);
-    }
+    memoryCache.del(key);
   },
 
   async exists(key: string): Promise<boolean> {
-    try {
-      const result = await redisClient.exists(key);
-      return result === 1;
-    } catch (error) {
-      logger.error(`Cache exists error for key: ${key}`, error);
-      return false;
-    }
+    return memoryCache.exists(key);
   }
 };
 
+// Export a mock redisClient for compatibility (used in server.ts)
+export const redisClient = {
+  async ping(): Promise<string> {
+    return 'PONG';
+  },
+  async quit(): Promise<void> {
+    memoryCache.destroy();
+  }
+};

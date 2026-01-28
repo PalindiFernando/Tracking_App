@@ -8,7 +8,6 @@ import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
 import { rateLimiter } from './middleware/rateLimiter';
 import { db } from './database/connection';
-import { redisClient } from './cache/redis';
 import { setupWebSocket } from './websocket/server';
 
 // Routes
@@ -44,29 +43,28 @@ app.use((req, res, next) => {
 
 // Health check
 app.get('/health', async (req, res) => {
+  const services: Record<string, string> = {};
+  let allHealthy = true;
+  
+  // Check database connection
   try {
-    // Check database connection
     await db.query('SELECT 1');
-    
-    // Check Redis connection
-    await redisClient.ping();
-    
-    res.json({
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      services: {
-        database: 'connected',
-        redis: 'connected'
-      }
-    });
+    services.database = 'connected';
   } catch (error) {
-    logger.error('Health check failed', error);
-    res.status(503).json({
-      status: 'unhealthy',
-      error: 'Service unavailable'
-    });
+    services.database = 'disconnected';
+    allHealthy = false;
   }
+  
+  // Cache is now in-memory, no external service needed
+  services.cache = 'in-memory';
+  
+  const status = allHealthy ? 'healthy' : 'degraded';
+  res.status(allHealthy ? 200 : 503).json({
+    status,
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    services
+  });
 });
 
 // API Routes
@@ -92,17 +90,33 @@ server.listen(PORT, async () => {
   try {
     await db.query('SELECT 1');
     logger.info('Database connected successfully');
-  } catch (error) {
-    logger.error('Database connection failed', error);
+  } catch (error: any) {
+    let errorCode = error.code || error.errno || 'UNKNOWN';
+    let errorMessage = error.message;
+    
+    // Handle AggregateError (common with connection errors)
+    if (error.name === 'AggregateError' && error.errors && error.errors.length > 0) {
+      const firstError = error.errors[0];
+      errorCode = firstError.code || firstError.errno || errorCode;
+      errorMessage = firstError.message || firstError.toString() || errorMessage;
+    }
+    
+    // Fallback if message is still not available
+    if (!errorMessage || errorMessage === 'Connection failed') {
+      if (errorCode === 'ECONNREFUSED') {
+        errorMessage = `Connection refused - PostgreSQL server not available on ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}`;
+      } else {
+        errorMessage = error.toString().includes('ECONNREFUSED') 
+          ? 'Connection refused - PostgreSQL server not available'
+          : 'Connection failed';
+      }
+    }
+    
+    logger.warn(`Database connection failed: ${errorCode} - ${errorMessage}. Please ensure PostgreSQL is running.`);
   }
   
-  // Test Redis connection
-  try {
-    await redisClient.ping();
-    logger.info('Redis connected successfully');
-  } catch (error) {
-    logger.error('Redis connection failed', error);
-  }
+  // Using in-memory cache (no external service needed)
+  logger.info('In-memory cache initialized');
 });
 
 // Graceful shutdown
@@ -112,10 +126,8 @@ process.on('SIGTERM', async () => {
     logger.info('HTTP server closed');
     db.end(() => {
       logger.info('Database connection closed');
-      redisClient.quit(() => {
-        logger.info('Redis connection closed');
-        process.exit(0);
-      });
+      logger.info('Cache cleared');
+      process.exit(0);
     });
   });
 });
